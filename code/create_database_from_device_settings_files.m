@@ -41,7 +41,8 @@ if ~exist(database_dir,'dir')
 end
 
 % check if a device settings database exists 
-fnload = fullfile(database_dir,'database_from_device_settings.mat');
+% fnload = fullfile(database_dir,'database_from_device_settings.mat');
+fnload = fullfile(database_dir,'database_from_device_settings_new.mat');
 if exist(fnload,'file')
     load(fnload,'masterTableOut');
     fprintf('took %.2f to load device settings database\n',toc(start));
@@ -77,11 +78,13 @@ end
 for a = 1:length(allDeviceSettingsOut)
     try
         deviceSettingsFn = allDeviceSettingsOut{a};
-        masterTableOut(cnt,:) = get_meta_data_from_device_settings_file(deviceSettingsFn);
+%         masterTableOut(cnt,:) = get_meta_data_from_device_settings_file(deviceSettingsFn);
+        masterTableOut(cnt,:) = get_meta_data_from_device_settings_file_new_code(deviceSettingsFn);
+        
         cnt = cnt + 1;
         fclose('all');
     catch
-        badFilesOut{bdfile} = dseviceSettingsFn;
+        badFilesOut{bdfile} = deviceSettingsFn;
         bdfile = bdfile + 1; 
         fclose('all');
     end
@@ -91,7 +94,7 @@ end
 if ~exist(database_dir,'dir')
     mkdir(database_dir);
 end
-masterTableLightOut = masterTableOut(:,{'patient','side','area','diagnosis','timeStart','timeEnd','duration','detectionStreaming',...
+masterTableLightOut = masterTableOut(:,{'patient','side','area','timeStart','timeEnd','duration','detectionStreaming',...
     'powerStreaming','timeDomainStreaming','deviceSettingsFn','recordedWithScbs',...
     'recordedWithResearchApp','chan1','chan2','chan3','chan4',...
     'stimulation_on','electrodes','amplitude_mA','rate_Hz'});
