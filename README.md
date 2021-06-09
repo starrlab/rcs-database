@@ -28,7 +28,7 @@ Sample code is provided to agregate and compared data across different condition
 
 
 #### Structure of code and main functions: 
-ç - This is the main function that can run (on periodic basis) and calls all subfunctions listed below: 
+This is the main function that can run (on periodic basis) and calls all subfunctions listed below: 
 
 * `move_and_delete_folders` - Move data from all patient folders to patient data. Note that as new patients are added this must be adjusted in two locations (so new folders are searched): 
 
