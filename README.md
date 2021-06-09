@@ -28,7 +28,7 @@ Sample code is provided to agregate and compared data across different condition
 
 
 #### Structure of code and main functions: 
-`MAIN_maintain_database` - This is the main function that can run (on periodic basis) and calls all subfunctions listed below: 
+ç - This is the main function that can run (on periodic basis) and calls all subfunctions listed below: 
 
 * `move_and_delete_folders` - Move data from all patient folders to patient data. Note that as new patients are added this must be adjusted in two locations (so new folders are searched): 
 
@@ -71,8 +71,8 @@ This call is using logical indexing to find indexes in the database of patient `
 
 #### Running on schedule:
 
-Currently, a '.sh' file is running on a mac and this runs a job every morning at 3am to move all files in dropbox from patient computer to the dropbox "unsynced" folder. 
-This is daemon is run with: 
+Currently, a '.sh' file is running on a mac and this runs a job every morning at 3am to move all files in dropbox from patient computer to the dropbox "unsynced" folder. It tuns through (almost) all functions in 'MAIN_maintain_database' described above, and each function is run via Matlab command line and is wrapped with error output for debugging. 
+This is daemon is run with on a mac: 
 https://www.soma-zone.com/LaunchControl/
-on a Mac, and probably makes sense to run this with the task scheduler on windows and a '.cmd' file. 
+It probably makes sense to run this with the task scheduler on windows and a '.cmd' file.
 The sample (mac based '.sh') file is: 'runMoveDeleteFolders.sh'
