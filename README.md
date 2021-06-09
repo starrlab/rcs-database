@@ -73,7 +73,6 @@ This call is using logical indexing to find indexes in the database of patient `
 
 Currently, a '.sh' file is running on a mac and this runs a job every morning at 3am to move all files in dropbox from patient computer to the dropbox "unsynced" folder. 
 This is daemon is run with: 
-#### Database operations: 
 https://www.soma-zone.com/LaunchControl/
 on a Mac, and probably makes sense to run this with the task scheduler on windows and a '.cmd' file. 
 The sample (mac based '.sh') file is: 'runMoveDeleteFolders.sh'
