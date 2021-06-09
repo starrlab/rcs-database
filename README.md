@@ -69,3 +69,11 @@ Here is an example of a sample call:
 ```
 This call is using logical indexing to find indexes in the database of patient `RCS02` on the `L` side, with these sense channel params on channel 1: `+2-0 lpf1-450Hz lpf2-1700Hz sr-250Hz`. In addition it is looking for data off stim, with time domain and acc strreaming and recorded with the patient facing application. It uses the database to creat a table with this data (in dropbox). Subsequent analysis require opening and looping on that data, and that is best done with current OpenMind code and not legacy code I have used. However, we are waiting on a new computer / computing setup to do this for all code. 
 
+#### Running on schedule:
+
+Currently, a '.sh' file is running on a mac and this runs a job every morning at 3am to move all files in dropbox from patient computer to the dropbox "unsynced" folder. 
+This is daemon is run with: 
+#### Database operations: 
+https://www.soma-zone.com/LaunchControl/
+on a Mac, and probably makes sense to run this with the task scheduler on windows and a '.cmd' file. 
+The sample (mac based '.sh') file is: 'runMoveDeleteFolders.sh'
