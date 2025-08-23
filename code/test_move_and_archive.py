@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import logging
 import subprocess
+import shutil
 
 import move_and_archive
 
@@ -116,12 +117,12 @@ class TestMoveAndArchive(unittest.TestCase):
         # Should not attempt to remove directory in dry run
 
     # Test move_session_data in live mode
-    # Mocks subprocess.run, Path.is_dir, Path.rmdir, and logging
+    # Mocks subprocess.run, Path.is_dir, shutil.rmtree, and logging
     @patch("move_and_archive.subprocess.run")
     @patch("move_and_archive.Path.is_dir", return_value=True)
-    @patch("move_and_archive.Path.rmdir")
+    @patch("move_and_archive.shutil.rmtree")
     @patch("move_and_archive.logging")
-    def test_move_session_data_live(self, mock_logging, mock_rmdir, mock_is_dir, mock_subprocess_run):
+    def test_move_session_data_live(self, mock_logging, mock_rmtree, mock_is_dir, mock_subprocess_run):
         # Simulate rsync live run output
         mock_result = MagicMock()
         mock_result.stdout = "rsync output"
@@ -137,8 +138,8 @@ class TestMoveAndArchive(unittest.TestCase):
         self.assertTrue(any("rsync summary" in str(call_args) for call_args in mock_logging.info.call_args_list))
         # Ensure subprocess.run was called
         mock_subprocess_run.assert_called_once()
-        # Ensure rmdir was called to remove the source directory
-        mock_rmdir.assert_called_once()
+        # Ensure rmtree was called to remove the source directory and any empty subdirectories
+        mock_rmtree.assert_called_once()
 
     # Edge case: rsync subprocess fails
     @patch("move_and_archive.subprocess.run", side_effect=subprocess.CalledProcessError(1, ['rsync'], output='stdout', stderr='stderr'))
@@ -154,9 +155,9 @@ class TestMoveAndArchive(unittest.TestCase):
     # Edge case: source directory cannot be removed after move
     @patch("move_and_archive.subprocess.run")
     @patch("move_and_archive.Path.is_dir", return_value=True)
-    @patch("move_and_archive.Path.rmdir", side_effect=OSError("Directory not empty"))
+    @patch("move_and_archive.shutil.rmtree", side_effect=OSError("Permission denied"))
     @patch("move_and_archive.logging")
-    def test_move_session_data_rmdir_fails(self, mock_logging, mock_rmdir, mock_is_dir, mock_subprocess_run):
+    def test_move_session_data_rmtree_fails(self, mock_logging, mock_rmtree, mock_is_dir, mock_subprocess_run):
         mock_result = MagicMock()
         mock_result.stdout = "rsync output"
         mock_subprocess_run.return_value = mock_result
