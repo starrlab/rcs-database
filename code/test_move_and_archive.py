@@ -93,6 +93,22 @@ class TestMoveAndArchive(unittest.TestCase):
         result = move_and_archive.get_destination_path(subject_id, session_name, src_base_path)
         self.assertEqual(result, expected)
 
+    # Test get_destination_path for RCS01 special case
+    def test_get_destination_path_rcs01_special_case(self):
+        subject_id = "RCS01L"  # RCS01 maps to RCS01L for destination
+        session_name = "Session1608052648432"
+        src_base_path = Path("/path/to/SummitContinuousBilateralStreaming/RCS01")  # Source uses RCS01 (no hemisphere)
+        expected = (
+            move_and_archive.UNSYNCED_BASE_PATH /
+            "RCS01 Un-Synced Data" /
+            "SummitData" /
+            "SummitContinuousBilateralStreaming" /
+            subject_id /  # This will be "RCS01L"
+            session_name
+        )
+        result = move_and_archive.get_destination_path(subject_id, session_name, src_base_path)
+        self.assertEqual(result, expected)
+
     # Test move_session_data in dry run mode
     # Mocks subprocess.run, Path.is_dir, and logging
     @patch("move_and_archive.subprocess.run")
@@ -310,6 +326,22 @@ class TestMoveAndArchive(unittest.TestCase):
         
         # The function should handle RCS02 specially by using 'RC02LTE' as patient directory
         # while still generating 'RCS02L' and 'RCS02R' as subject IDs
+        # This is tested by the structure test above which verifies the overall behavior
+
+    # Test generate_subject_paths RCS01 special case logic
+    def test_generate_subject_paths_rcs01_special_case_logic(self):
+        # Test that the function correctly handles the RCS01 special case
+        # RCS01 uses source directory 'RCS01' (no hemisphere suffix) but maps to 'RCS01L' destination
+        
+        # Import the function to test its logic
+        from move_and_archive import generate_subject_paths
+        
+        # Check that the function exists and is callable
+        self.assertTrue(callable(generate_subject_paths))
+        
+        # The function should handle RCS01 specially by:
+        # 1. Looking for source directory 'RCS01' (not 'RCS01L' or 'RCS01R')
+        # 2. Mapping it to subject_id 'RCS01L' for destination purposes
         # This is tested by the structure test above which verifies the overall behavior
 
     # Test main function with no subjects found

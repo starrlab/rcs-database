@@ -104,38 +104,38 @@ def generate_subject_paths():
     Each subject gets both left (L) and right (R) hemisphere variants.
     A subject can have data in both data sources, so both are included if they exist.
     
-    Special case: RCS02 uses patient directory 'RC02LTE' instead of 'RCS02'.
+    Special cases:
+    - RCS02 uses patient directory 'RC02LTE' instead of 'RCS02'.
+    - RCS01 uses source directory 'RCS01' (no hemisphere suffix) but maps to 'RCS01L' destination.
     
     Returns:
         dict: Dictionary mapping subject_id to list of source paths.
     """
     subjects_to_process = {}
     
-    # Generate RCS01 through RCS20
+    # Special case mappings
+    patient_id_map = {2: "RC02LTE"}  # RCS02 uses 'RC02LTE'
+    source_dir_map = {1: "RCS01"}    # RCS01 uses 'RCS01' as source directory
+    
     for i in range(1, 21):
-        if i == 2:
-            # Special case: RCS02 uses 'RC02LTE' as patient directory
-            patient_id = "RC02LTE"
-        else:
-            patient_id = f"RCS{i:02d}"  # RCS01, RCS03, ..., RCS20
+        patient_id = patient_id_map.get(i, f"RCS{i:02d}")
         
-        # Create both left and right hemisphere variants
-        for hemisphere in ['L', 'R']:
-            subject_id = f"RCS{i:02d}{hemisphere}"  # Always use RCS02L, RCS02R for subject ID
-            
-            # Check if both data source directories exist for this subject
-            # Structure: /media/dropbox_hdd/Starr Lab Dropbox/RCS01/SummitData/SummitContinuousBilateralStreaming/RCS01L
-            # Special case for RCS02: /media/dropbox_hdd/Starr Lab Dropbox/RC02LTE/SummitData/SummitContinuousBilateralStreaming/RCS02L
-            starr_lab_path = DATA_BASE / patient_id / 'SummitData' / 'StarrLab' / subject_id
-            summit_path = DATA_BASE / patient_id / 'SummitData' / 'SummitContinuousBilateralStreaming' / subject_id
-            
+        # Determine subject configurations
+        if i == 1:
+            # RCS01: single hemisphere (L), special source directory
+            subject_configs = [("RCS01L", source_dir_map[1])]
+        else:
+            # All other subjects: both hemispheres, standard naming
+            subject_configs = [(f"RCS{i:02d}{h}", f"RCS{i:02d}{h}") for h in ['L', 'R']]
+        
+        # Check each subject configuration
+        for subject_id, source_dir in subject_configs:
             source_paths = []
-            if starr_lab_path.exists():
-                source_paths.append(str(starr_lab_path))
-            if summit_path.exists():
-                source_paths.append(str(summit_path))
+            for data_type in ['StarrLab', 'SummitContinuousBilateralStreaming']:
+                path = DATA_BASE / patient_id / 'SummitData' / data_type / source_dir
+                if path.exists():
+                    source_paths.append(str(path))
             
-            # Only add subjects that have at least one data source
             if source_paths:
                 subjects_to_process[subject_id] = source_paths
     
