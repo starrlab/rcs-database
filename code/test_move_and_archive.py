@@ -285,7 +285,7 @@ class TestMoveAndArchive(unittest.TestCase):
         if result:  # Only run assertions if there are results
             # Check that keys follow the expected pattern
             for subject_id in result.keys():
-                self.assertRegex(subject_id, r'(RCS\d{2}|PFC01)[LR]')
+                self.assertRegex(subject_id, r'^(RCS\d{2}[LR]|PFC01R)$')
             
             # Check that values are lists of strings
             for source_paths in result.values():
