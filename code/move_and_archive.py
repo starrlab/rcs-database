@@ -99,18 +99,21 @@ def get_session_age(session_path: Path) -> timedelta:
 def generate_subject_paths():
     """
     Generates a dictionary mapping subject IDs to their source paths.
-    
+
     Creates paths for RCS01-RCS20 subjects in both StarrLab and SummitContinuousBilateralStreaming directories.
     Each subject gets both left (L) and right (R) hemisphere variants.
     A subject can have data in both data sources, so both are included if they exist.
-    
-    Special case: RCS02 uses patient directory 'RC02LTE' instead of 'RCS02'.
-    
+
+    Special cases:
+    - RCS02 uses patient directory 'RC02LTE' instead of 'RCS02'.
+    - RCS01 source directories are missing the 'L' suffix (use 'RCS01' instead of 'RCS01L').
+    - PFC01 is right-side only and source directories are missing the 'R' suffix (use 'PFC01' instead of 'PFC01R').
+
     Returns:
         dict: Dictionary mapping subject_id to list of source paths.
     """
     subjects_to_process = {}
-    
+
     # Generate RCS01 through RCS20
     for i in range(1, 21):
         if i == 2:
@@ -118,27 +121,52 @@ def generate_subject_paths():
             patient_id = "RC02LTE"
         else:
             patient_id = f"RCS{i:02d}"  # RCS01, RCS03, ..., RCS20
-        
+
         # Create both left and right hemisphere variants
         for hemisphere in ['L', 'R']:
             subject_id = f"RCS{i:02d}{hemisphere}"  # Always use RCS02L, RCS02R for subject ID
-            
+
+            # Special case for RCS01: source directories are missing 'L' suffix
+            if i == 1 and hemisphere == 'L':
+                source_subject_dir = "RCS01"  # Missing 'L' suffix in source
+            else:
+                source_subject_dir = subject_id
+
             # Check if both data source directories exist for this subject
             # Structure: /media/dropbox_hdd/Starr Lab Dropbox/RCS01/SummitData/SummitContinuousBilateralStreaming/RCS01L
             # Special case for RCS02: /media/dropbox_hdd/Starr Lab Dropbox/RC02LTE/SummitData/SummitContinuousBilateralStreaming/RCS02L
-            starr_lab_path = DATA_BASE / patient_id / 'SummitData' / 'StarrLab' / subject_id
-            summit_path = DATA_BASE / patient_id / 'SummitData' / 'SummitContinuousBilateralStreaming' / subject_id
-            
+            # Special case for RCS01: /media/dropbox_hdd/Starr Lab Dropbox/RCS01/SummitData/SummitContinuousBilateralStreaming/RCS01
+            starr_lab_path = DATA_BASE / patient_id / 'SummitData' / 'StarrLab' / source_subject_dir
+            summit_path = DATA_BASE / patient_id / 'SummitData' / 'SummitContinuousBilateralStreaming' / source_subject_dir
+
             source_paths = []
             if starr_lab_path.exists():
                 source_paths.append(str(starr_lab_path))
             if summit_path.exists():
                 source_paths.append(str(summit_path))
-            
+
             # Only add subjects that have at least one data source
             if source_paths:
                 subjects_to_process[subject_id] = source_paths
-    
+
+    # Special case for PFC01 (right-side only, missing 'R' suffix in source directories)
+    subject_id = "PFC01R"
+    source_subject_dir = "PFC01"  # Missing 'R' suffix in source
+    patient_id = "PFC01"
+
+    starr_lab_path = DATA_BASE / patient_id / 'SummitData' / 'StarrLab' / source_subject_dir
+    summit_path = DATA_BASE / patient_id / 'SummitData' / 'SummitContinuousBilateralStreaming' / source_subject_dir
+
+    source_paths = []
+    if starr_lab_path.exists():
+        source_paths.append(str(starr_lab_path))
+    if summit_path.exists():
+        source_paths.append(str(summit_path))
+
+    # Only add PFC01R if it has at least one data source
+    if source_paths:
+        subjects_to_process[subject_id] = source_paths
+
     return subjects_to_process
 
 def get_destination_path(subject_id: str, session_name: str, src_base_path: Path) -> Path:
