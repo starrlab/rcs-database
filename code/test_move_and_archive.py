@@ -3,8 +3,10 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 from pathlib import Path
 import logging
+import os
 import subprocess
 import shutil
+import tempfile
 
 import move_and_archive
 
@@ -25,6 +27,42 @@ class TestMoveAndArchive(unittest.TestCase):
         session_path = Path("SessionABCDEF")
         age = move_and_archive.get_session_age(session_path)
         self.assertEqual(age, timedelta.max)
+
+    # Test get_time_since_last_change on a session that was just written (should be ~0)
+    def test_get_time_since_last_change_recent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            device_dir = Path(tmp) / "Session1608052648432" / "DeviceNPC700000H"
+            device_dir.mkdir(parents=True)
+            (device_dir / "RawDataTD.json").write_text("{}")
+            result = move_and_archive.get_time_since_last_change(Path(tmp) / "Session1608052648432")
+        self.assertLess(result, timedelta(minutes=1))
+
+    # Test get_time_since_last_change on a missing directory (should return timedelta.max)
+    def test_get_time_since_last_change_missing(self):
+        result = move_and_archive.get_time_since_last_change(Path("/nonexistent/Session1608052648432"))
+        self.assertEqual(result, timedelta.max)
+
+    # Test get_time_since_last_change uses the most recent ctime of any file or folder, ignoring mtime
+    @patch("move_and_archive.os.stat")
+    @patch("move_and_archive.os.walk")
+    def test_get_time_since_last_change_uses_latest_ctime(self, mock_walk, mock_stat):
+        now = datetime.now().timestamp()
+        mock_walk.return_value = [
+            ("/s", ["Device"], []),
+            ("/s/Device", [], ["EventLog.json", "RawDataTD.json"]),
+        ]
+        # The tablet-provided mtimes are days old, but RawDataTD.json arrived 10 minutes ago.
+        ctimes = {
+            "/s": now - 7200,
+            "/s/Device": now - 7200,
+            "/s/Device/EventLog.json": now - 7200,
+            "/s/Device/RawDataTD.json": now - 600,
+        }
+        mock_stat.side_effect = lambda path: MagicMock(st_ctime=ctimes[path], st_mtime=now - 5 * 86400)
+
+        result = move_and_archive.get_time_since_last_change(Path("/s"))
+
+        self.assertTrue(timedelta(minutes=9) < result < timedelta(minutes=11))
 
     # Test get_destination_path for SummitContinuousBilateralStreaming data
     def test_get_destination_path_summit_continuous(self):
@@ -269,8 +307,52 @@ class TestMoveAndArchive(unittest.TestCase):
         
         # move_session_data should not be called because destination exists
         mock_move_session_data.assert_not_called()
-        # Should log a warning about destination already existing
-        self.assertTrue(any("already exists" in str(call_args) for call_args in mock_logging.warning.call_args_list))
+        # Should log an error about destination already existing so it gets reviewed
+        self.assertTrue(any("already exists" in str(call_args) for call_args in mock_logging.error.call_args_list))
+
+    # Test main function moves a session just past the 5-hour age threshold
+    @patch("move_and_archive.move_session_data")
+    @patch("move_and_archive.get_destination_path")
+    @patch("move_and_archive.get_time_since_last_change", return_value=timedelta(hours=2))
+    @patch("move_and_archive.get_session_age", return_value=timedelta(hours=5, minutes=30))
+    @patch("move_and_archive.Path.is_dir", return_value=True)
+    @patch("move_and_archive.logging")
+    @patch("move_and_archive.generate_subject_paths")
+    def test_main_moves_session_past_age_threshold(self, mock_generate_paths, mock_logging, mock_is_dir, mock_get_session_age, mock_get_time_since_last_change, mock_get_destination_path, mock_move_session_data):
+        mock_generate_paths.return_value = {"RCS02L": ["/tmp/source"]}
+        session_path = Path("/tmp/source/Session1608052648432")
+        dest_path = Path("/dest/path")
+        mock_get_destination_path.return_value = dest_path
+
+        with patch("move_and_archive.Path.iterdir", return_value=[session_path]):
+            with patch("move_and_archive.setup_logging"):
+                with patch("move_and_archive.Path.exists", side_effect=[True, False]):
+                    with patch("move_and_archive.argparse.ArgumentParser.parse_args", return_value=type('Args', (), {'dry_run': False})()):
+                        move_and_archive.main()
+
+        mock_move_session_data.assert_called_once_with(session_path, dest_path, dry_run=False)
+
+    # Test main function skips a session that is old enough but still receiving data
+    @patch("move_and_archive.move_session_data")
+    @patch("move_and_archive.get_destination_path")
+    @patch("move_and_archive.get_time_since_last_change", return_value=timedelta(minutes=10))
+    @patch("move_and_archive.get_session_age", return_value=timedelta(hours=9))
+    @patch("move_and_archive.Path.is_dir", return_value=True)
+    @patch("move_and_archive.logging")
+    @patch("move_and_archive.generate_subject_paths")
+    def test_main_skips_session_still_uploading(self, mock_generate_paths, mock_logging, mock_is_dir, mock_get_session_age, mock_get_time_since_last_change, mock_get_destination_path, mock_move_session_data):
+        mock_generate_paths.return_value = {"RCS02L": ["/tmp/source"]}
+        session_path = Path("/tmp/source/Session1608052648432")
+
+        with patch("move_and_archive.Path.iterdir", return_value=[session_path]):
+            with patch("move_and_archive.setup_logging"):
+                with patch("move_and_archive.Path.exists", return_value=True):
+                    with patch("move_and_archive.argparse.ArgumentParser.parse_args", return_value=type('Args', (), {'dry_run': False})()):
+                        move_and_archive.main()
+
+        mock_move_session_data.assert_not_called()
+        mock_get_destination_path.assert_not_called()
+        self.assertTrue(any("may still be uploading" in str(call_args) for call_args in mock_logging.info.call_args_list))
 
     # Test generate_subject_paths function structure
     def test_generate_subject_paths_structure(self):
@@ -359,6 +441,29 @@ class TestMoveAndArchive(unittest.TestCase):
         self.assertIn("GaitRCS05L", result)
         self.assertEqual(result["GaitRCS05L"], [str(gait_summit)])
         self.assertNotIn("GaitRCS05R", result)
+
+    # Test generate_subject_paths PFC03 special case (left-side only, source dir misnamed 'pfc02')
+    @patch("move_and_archive.Path.exists", autospec=True)
+    def test_generate_subject_paths_pfc03_special_case(self, mock_exists):
+        # Only the PFC03 SummitContinuousBilateralStreaming/pfc02 path exists.
+        pfc03_summit = (
+            move_and_archive.DATA_BASE /
+            "PFC03" /
+            "SummitData" /
+            "SummitContinuousBilateralStreaming" /
+            "pfc02"
+        )
+
+        def exists_side_effect(self_path):
+            return self_path == pfc03_summit
+
+        mock_exists.side_effect = exists_side_effect
+
+        result = move_and_archive.generate_subject_paths()
+
+        self.assertIn("PFC03L", result)
+        self.assertEqual(result["PFC03L"], [str(pfc03_summit)])
+        self.assertNotIn("PFC03R", result)
 
     # Test get_destination_path for GaitRCS05L
     def test_get_destination_path_gaitrcs05(self):
