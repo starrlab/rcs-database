@@ -8,7 +8,8 @@ The script supports a dry-run mode for safe simulation and logs all operations t
 
 Key features:
 - Automatically generates source paths for RCS01-RCS20 subjects
-- Moves only sessions older than a configurable threshold (default: 8 hours).
+- Moves only sessions older than a configurable threshold (default: 5 hours).
+- Skips sessions that are still receiving data (any file or folder changed on disk within the last hour).
 - Uses rsync with checksum verification for data integrity.
 - Supports multiple source paths per subject (e.g., both StarrLab and SummitContinuousBilateralStreaming).
 - Automatically detects data type from each source path and routes to appropriate destination structure.
@@ -28,6 +29,7 @@ Configuration:
     Handles session folders named with both "Session" and "session" prefixes.
 """
 import logging
+import os
 import subprocess
 import argparse  # Added for command-line argument handling
 import re
@@ -50,7 +52,13 @@ UNSYNCED_BASE_PATH = Path('/media/dropbox_hdd/Starr Lab Dropbox/RC+S Patient Un-
 LOG_FILE = Path('logs/move_and_archive.log')
 
 # Safety feature: only move sessions older than this duration
-MOVE_AGE_THRESHOLD = timedelta(hours=8)
+MOVE_AGE_THRESHOLD = timedelta(hours=5)
+
+# Safety feature: only move sessions whose files have not changed on disk for this long.
+# Session age is measured from the session's start time, so a long or slow-uploading session
+# can pass MOVE_AGE_THRESHOLD while Dropbox is still writing it.
+UPLOAD_QUIET_PERIOD = timedelta(hours=1)
+
 
 # --- Main Logic ---
 def setup_logging():
@@ -96,6 +104,35 @@ def get_session_age(session_path: Path) -> timedelta:
         logging.warning(f"Could not parse timestamp from session folder: {session_path.name}")
         return timedelta.max # Treat as old enough to move if unparseable
 
+def get_time_since_last_change(session_path: Path) -> timedelta:
+    """
+    Determines how long ago anything in a session directory last changed on this machine.
+
+    Uses ctime rather than mtime: Dropbox sets each file's mtime to the patient tablet's timestamp,
+    so mtime can be days older than when the file actually arrived. ctime reflects the local write.
+
+    Args:
+        session_path (Path): Path object pointing to the session directory.
+
+    Returns:
+        timedelta: Time since the most recent change to the directory, its subdirectories, or its files.
+            If nothing can be stat'ed, returns timedelta.max.
+    """
+    latest_change = None
+    for dirpath, _, filenames in os.walk(session_path):
+        for name in [None] + filenames:
+            path = dirpath if name is None else os.path.join(dirpath, name)
+            try:
+                change_time = os.stat(path).st_ctime
+            except OSError:
+                continue
+            if latest_change is None or change_time > latest_change:
+                latest_change = change_time
+
+    if latest_change is None:
+        return timedelta.max
+    return datetime.now() - datetime.fromtimestamp(latest_change)
+
 def generate_subject_paths():
     """
     Generates a dictionary mapping subject IDs to their source paths.
@@ -108,6 +145,8 @@ def generate_subject_paths():
     - RCS02 uses patient directory 'RC02LTE' instead of 'RCS02'.
     - RCS01 source directories are missing the 'L' suffix (use 'RCS01' instead of 'RCS01L').
     - PFC01 is right-side only and source directories are missing the 'R' suffix (use 'PFC01' instead of 'PFC01R').
+    - PFC03 is left-side only and source directory was misnamed 'pfc02' instead of 'PFC03L'.
+    - GaitRCS05 is left-side only and source directory was named 'gRCS05L' instead of 'GaitRCS05L'.
 
     Returns:
         dict: Dictionary mapping subject_id to list of source paths.
@@ -164,6 +203,42 @@ def generate_subject_paths():
         source_paths.append(str(summit_path))
 
     # Only add PFC01R if it has at least one data source
+    if source_paths:
+        subjects_to_process[subject_id] = source_paths
+
+    # Special case for PFC03 (left-side only, source directory misnamed as 'pfc02')
+    subject_id = "PFC03L"
+    source_subject_dir = "pfc02"
+    patient_id = "PFC03"
+
+    starr_lab_path = DATA_BASE / patient_id / 'SummitData' / 'StarrLab' / source_subject_dir
+    summit_path = DATA_BASE / patient_id / 'SummitData' / 'SummitContinuousBilateralStreaming' / source_subject_dir
+
+    source_paths = []
+    if starr_lab_path.exists():
+        source_paths.append(str(starr_lab_path))
+    if summit_path.exists():
+        source_paths.append(str(summit_path))
+
+    # Only add PFC03L if it has at least one data source
+    if source_paths:
+        subjects_to_process[subject_id] = source_paths
+
+    # Special case for GaitRCS05 (left-side only, source directory named 'gRCS05L')
+    subject_id = "GaitRCS05L"
+    source_subject_dir = "gRCS05L"
+    patient_id = "GaitRCS05"
+
+    starr_lab_path = DATA_BASE / patient_id / 'SummitData' / 'StarrLab' / source_subject_dir
+    summit_path = DATA_BASE / patient_id / 'SummitData' / 'SummitContinuousBilateralStreaming' / source_subject_dir
+
+    source_paths = []
+    if starr_lab_path.exists():
+        source_paths.append(str(starr_lab_path))
+    if summit_path.exists():
+        source_paths.append(str(summit_path))
+
+    # Only add GaitRCS05L if it has at least one data source
     if source_paths:
         subjects_to_process[subject_id] = source_paths
 
@@ -343,13 +418,22 @@ def main():
                     logging.info(f"  Skipping recent session '{session_path.name}' (age: {age}).")
                     continue
 
-                # 2. Determine the destination
-                dest_session_path = get_destination_path(subject_id, session_path.name, src_base_path)
-                if dest_session_path.exists() and not args.dry_run:
-                    logging.warning(f"  Destination '{dest_session_path}' already exists. Skipping to avoid data loss.")
+                # 2. Skip sessions that are still being uploaded
+                time_since_change = get_time_since_last_change(session_path)
+                if time_since_change < UPLOAD_QUIET_PERIOD:
+                    logging.info(f"  Skipping session '{session_path.name}' that may still be uploading (last changed {time_since_change} ago).")
                     continue
 
-                # 3. Move the data, passing the dry_run flag
+                # 3. Determine the destination
+                dest_session_path = get_destination_path(subject_id, session_path.name, src_base_path)
+                if dest_session_path.exists() and not args.dry_run:
+                    # Usually an earlier, partial copy of a session whose upload finished after it was archived.
+                    # Needs a person to decide which copy to keep, so log it as an error rather than a routine skip.
+                    logging.error(f"  Destination '{dest_session_path}' already exists. Skipping to avoid data loss; "
+                                  f"compare it with '{session_path}' and keep the complete copy.")
+                    continue
+
+                # 4. Move the data, passing the dry_run flag
                 move_session_data(session_path, dest_session_path, dry_run=args.dry_run)
 
     # Add blank line before script finish
