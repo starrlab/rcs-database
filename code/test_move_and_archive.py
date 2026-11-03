@@ -285,7 +285,7 @@ class TestMoveAndArchive(unittest.TestCase):
         if result:  # Only run assertions if there are results
             # Check that keys follow the expected pattern
             for subject_id in result.keys():
-                self.assertRegex(subject_id, r'^(RCS\d{2}[LR]|PFC01R)$')
+                self.assertRegex(subject_id, r'^(RCS\d{2}[LR]|PFC01R|PFC03L|GaitRCS05L)$')
             
             # Check that values are lists of strings
             for source_paths in result.values():
@@ -336,6 +336,45 @@ class TestMoveAndArchive(unittest.TestCase):
         # Verify the function returns a dictionary when called
         result = move_and_archive.generate_subject_paths()
         self.assertIsInstance(result, dict)
+
+    # Test generate_subject_paths GaitRCS05 special case (left-side only, source dir 'gRCS05L')
+    @patch("move_and_archive.Path.exists", autospec=True)
+    def test_generate_subject_paths_gaitrcs05_special_case(self, mock_exists):
+        # Only the GaitRCS05 SummitContinuousBilateralStreaming/gRCS05L path exists.
+        gait_summit = (
+            move_and_archive.DATA_BASE /
+            "GaitRCS05" /
+            "SummitData" /
+            "SummitContinuousBilateralStreaming" /
+            "gRCS05L"
+        )
+
+        def exists_side_effect(self_path):
+            return self_path == gait_summit
+
+        mock_exists.side_effect = exists_side_effect
+
+        result = move_and_archive.generate_subject_paths()
+
+        self.assertIn("GaitRCS05L", result)
+        self.assertEqual(result["GaitRCS05L"], [str(gait_summit)])
+        self.assertNotIn("GaitRCS05R", result)
+
+    # Test get_destination_path for GaitRCS05L
+    def test_get_destination_path_gaitrcs05(self):
+        subject_id = "GaitRCS05L"
+        session_name = "Session1608052648432"
+        src_base_path = Path("/path/to/SummitContinuousBilateralStreaming/gRCS05L")
+        expected = (
+            move_and_archive.UNSYNCED_BASE_PATH /
+            "GaitRCS05 Un-Synced Data" /
+            "SummitData" /
+            "SummitContinuousBilateralStreaming" /
+            subject_id /
+            session_name
+        )
+        result = move_and_archive.get_destination_path(subject_id, session_name, src_base_path)
+        self.assertEqual(result, expected)
 
     # Test main function with no subjects found
     @patch("move_and_archive.logging")

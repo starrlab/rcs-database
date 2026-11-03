@@ -52,6 +52,7 @@ LOG_FILE = Path('logs/move_and_archive.log')
 # Safety feature: only move sessions older than this duration
 MOVE_AGE_THRESHOLD = timedelta(hours=8)
 
+
 # --- Main Logic ---
 def setup_logging():
     """
@@ -108,6 +109,8 @@ def generate_subject_paths():
     - RCS02 uses patient directory 'RC02LTE' instead of 'RCS02'.
     - RCS01 source directories are missing the 'L' suffix (use 'RCS01' instead of 'RCS01L').
     - PFC01 is right-side only and source directories are missing the 'R' suffix (use 'PFC01' instead of 'PFC01R').
+    - PFC03 is left-side only and source directory was misnamed 'pfc02' instead of 'PFC03L'.
+    - GaitRCS05 is left-side only and source directory was named 'gRCS05L' instead of 'GaitRCS05L'.
 
     Returns:
         dict: Dictionary mapping subject_id to list of source paths.
@@ -164,6 +167,42 @@ def generate_subject_paths():
         source_paths.append(str(summit_path))
 
     # Only add PFC01R if it has at least one data source
+    if source_paths:
+        subjects_to_process[subject_id] = source_paths
+
+    # Special case for PFC03 (left-side only, source directory misnamed as 'pfc02')
+    subject_id = "PFC03L"
+    source_subject_dir = "pfc02"
+    patient_id = "PFC03"
+
+    starr_lab_path = DATA_BASE / patient_id / 'SummitData' / 'StarrLab' / source_subject_dir
+    summit_path = DATA_BASE / patient_id / 'SummitData' / 'SummitContinuousBilateralStreaming' / source_subject_dir
+
+    source_paths = []
+    if starr_lab_path.exists():
+        source_paths.append(str(starr_lab_path))
+    if summit_path.exists():
+        source_paths.append(str(summit_path))
+
+    # Only add PFC03L if it has at least one data source
+    if source_paths:
+        subjects_to_process[subject_id] = source_paths
+
+    # Special case for GaitRCS05 (left-side only, source directory named 'gRCS05L')
+    subject_id = "GaitRCS05L"
+    source_subject_dir = "gRCS05L"
+    patient_id = "GaitRCS05"
+
+    starr_lab_path = DATA_BASE / patient_id / 'SummitData' / 'StarrLab' / source_subject_dir
+    summit_path = DATA_BASE / patient_id / 'SummitData' / 'SummitContinuousBilateralStreaming' / source_subject_dir
+
+    source_paths = []
+    if starr_lab_path.exists():
+        source_paths.append(str(starr_lab_path))
+    if summit_path.exists():
+        source_paths.append(str(summit_path))
+
+    # Only add GaitRCS05L if it has at least one data source
     if source_paths:
         subjects_to_process[subject_id] = source_paths
 
